@@ -114,6 +114,21 @@ async def abrir_safra(sid, dados=None):
     await sio.emit("safra.iniciada", fato(pedido, por=jogadores[sid]["nome"]))
 
 
+# ON pedido do Jogador: construir (plantação, terreiro ou torrefação).
+@sio.on("construcao.solicitada")
+async def construir(sid, dados=None):
+    pedido = "construcao.solicitada"
+    tipo = (dados or {}).get("tipo", "plantacao")
+    info = CONSTRUCOES.get(tipo)
+    estado["cafe"] -= info["custo"]
+    estado["colhedores"] += 1
+    estado["em_obra"] += 1
+    obra = {"id": novo_id(), "tipo": tipo, "status": "obra",
+            "inicio": agora_ms(), "duracao": info["tempo"]}
+    estado["obras"].append(obra)
+    nome = jogadores[sid]["nome"]
+    # EMIT servidor -> TODOS: o pedido foi aceito e o estoque mudou para todos.
+    await sio.emit("construcao.iniciada", fato(pedido, por=nome, obra=obra))
 
 
 

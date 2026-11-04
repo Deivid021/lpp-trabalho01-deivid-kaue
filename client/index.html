@@ -435,6 +435,13 @@ createApp({
         avisar("A safra começou! (aberta por " + d.por + ")", "ok");
         jogo.safraIniciada();
       });
+      // ON construcao.iniciada: o servidor aceitou um pedido (de qualquer
+      // jogador) e debitou o café; todos mostram o canteiro.
+      ouvir("construcao.iniciada", "mostra o canteiro de obras e debita o café", (d) => {
+        atualizar(d);
+        avisar(d.por + " começou a construir " + estado.tipos[d.obra.tipo].nome);
+        jogo.obraIniciada(d.estado, d.obra);
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
@@ -444,6 +451,7 @@ createApp({
       pedir("safra.abertura_solicitada");
     }
     function construir(tipo) {
+      pedir("construcao.solicitada", { tipo });
     }
     function encerrarSafra() {
     }
