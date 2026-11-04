@@ -423,6 +423,12 @@ createApp({
       socket = io({ auth: { nome: nome.value.trim(), papel: papel.value } });
 
       // ================= ESCUTAS (fatos do servidor) =====================
+      // ON estado.sincronizado: chega só para este cliente ao conectar;
+      // é a única forma de saber como o cafezal está agora.
+      ouvir("estado.sincronizado", "guarda o estado e desenha o cafezal", (d) => {
+        atualizar(d);
+        jogo.mostrarEstado(d.estado);
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
