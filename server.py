@@ -92,6 +92,26 @@ async def disconnect(sid, *args):
     jogadores.pop(sid, None)
 
 
+async def recusar(sid, motivo, causa, **extras):
+    """EMIT servidor -> SÓ quem pediu: a recusa também é um evento, mas
+    não muda o estado, então os outros jogadores não precisam saber."""
+    await sio.emit("operacao.recusada",
+                   {"motivo": motivo, "causa": causa, **extras}, to=sid)
+
+
+# ON pedido do Mestre: abrir a safra.
+@sio.on("safra.abertura_solicitada")
+async def abrir_safra(sid, dados=None):
+    pedido = "safra.abertura_solicitada"
+    if jogadores[sid]["papel"] != "mestre":
+        await recusar(sid, "Só o Mestre pode abrir a safra", pedido)
+        return
+    if estado["fase"] != "aguardando":
+        await recusar(sid, "A safra já foi aberta", pedido)
+        return
+    estado["fase"] = "aberta"
+    # EMIT servidor -> TODOS: a mudança de fase vale para o cafezal inteiro.
+    await sio.emit("safra.iniciada", fato(pedido, por=jogadores[sid]["nome"]))
 
 
 

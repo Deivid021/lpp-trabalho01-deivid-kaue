@@ -429,12 +429,19 @@ createApp({
         atualizar(d);
         jogo.mostrarEstado(d.estado);
       });
+      // ON safra.iniciada: o Mestre abriu a safra; todos mudam a faixa.
+      ouvir("safra.iniciada", "muda a faixa para safra aberta", (d) => {
+        atualizar(d);
+        avisar("A safra começou! (aberta por " + d.por + ")", "ok");
+        jogo.safraIniciada();
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
     // O cliente só PEDE; quem decide é o servidor, que responde com um fato
     // (para todos) ou com operacao.recusada (só para quem pediu).
     function abrirSafra() {
+      pedir("safra.abertura_solicitada");
     }
     function construir(tipo) {
     }
