@@ -120,6 +120,8 @@
           <h2>Estoque do cafezal</h2>
           <div class="estoque">
             <div class="numero"><small>🍒 Café colhido</small><strong>{{ estado.cafe }}</strong></div>
+            <div class="numero"><small>🟫 Café seco</small><strong>{{ estado.cafe_seco }}</strong></div>
+            <div class="numero"><small>☕ Café torrado</small><strong>{{ estado.cafe_torrado }}</strong></div>
             <div class="numero"><small>👩‍🌾 Colhedores</small><strong>{{ estado.colhedores }}/{{ estado.limite }}</strong></div>
             <div class="numero"><small>⏱ Colheita</small><strong>+{{ porMinuto }}/min</strong></div>
             <div class="numero"><small>🚧 Em obra</small><strong>{{ estado.em_obra }}</strong></div>
@@ -129,6 +131,7 @@
             <span v-for="(qtd, tipo) in estado.concluidas" :key="tipo">
               {{ estado.tipos[tipo] ? estado.tipos[tipo].emoji + ' ' + estado.tipos[tipo].nome : tipo }}: {{ qtd }} &nbsp;
             </span>
+            · 🦠 Lotes mofados: {{ estado.mofados }}
           </p>
 
           <div class="acoes" v-if="papel === 'mestre'">
@@ -143,6 +146,18 @@
           </div>
         </section>
 
+        <!-- Lotes de grãos: precisam ir ao terreiro antes de mofar -->
+        <section class="cartao">
+          <h2>Lotes de grãos</h2>
+          <div v-if="!estado.lotes || estado.lotes.length === 0" class="vazio">
+            Nenhum lote agora. A cada 15 s um lote fica pronto no pé (com a safra aberta).
+          </div>
+          <div v-for="l in estado.lotes" :key="l.id" class="lote">
+            <span v-if="l.status === 'aguardando'">🍒 Lote #{{ l.id }} · {{ l.qtd }} grãos · mofa em <b>{{ restante(l, l.prazo) }}s</b></span>
+            <span v-else>🟫 Lote #{{ l.id }} secando no terreiro · {{ restante(l, l.duracao) }}s</span>
+            <button v-if="l.status === 'aguardando' && papel !== 'mestre'" @click="secar(l)">Levar ao terreiro</button>
+          </div>
+        </section>
       </div>
 
       <!-- Painel de eventos: mostra o paradigma funcionando -->
@@ -470,6 +485,30 @@ createApp({
         avisar("Safra encerrada.");
         jogo.safraEncerrada();
       });
+      // ON lote.colhido: temporizador do servidor; começa a contar o prazo.
+      ouvir("lote.colhido", "mostra o lote no pé com o prazo para secar", (d) => {
+        atualizar(d);
+        avisar("Lote #" + d.lote.id + " pronto no pé! Leve ao terreiro em " + d.lote.prazo + "s.");
+        jogo.loteColhido(d.estado, d.lote);
+      });
+      // ON secagem.iniciada: alguém levou o lote ao terreiro (terreiro ocupado).
+      ouvir("secagem.iniciada", "move o lote para o terreiro", (d) => {
+        atualizar(d);
+        avisar(d.por + " levou o lote #" + d.lote.id + " ao terreiro");
+        jogo.secagemIniciada(d.estado, d.lote);
+      });
+      // ON secagem.concluida: temporizador da secagem terminou; vira café seco.
+      ouvir("secagem.concluida", "soma o café seco e libera o terreiro", (d) => {
+        atualizar(d);
+        avisar("Lote #" + d.lote.id + " secou: +" + d.lote.qtd + " café seco", "ok");
+        jogo.secagemConcluida(d.estado, d.lote);
+      });
+      // ON lote.mofado: o prazo venceu e ninguém levou o lote ao terreiro.
+      ouvir("lote.mofado", "remove o lote e mostra que ele mofou", (d) => {
+        atualizar(d);
+        avisar("Lote #" + d.lote.id + " mofou! Ninguém levou ao terreiro a tempo.", "erro");
+        jogo.loteMofado(d.estado, d.lote);
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
@@ -485,6 +524,7 @@ createApp({
       pedir("safra.encerramento_solicitado");
     }
     function secar(lote) {
+      pedir("secagem.solicitada", { lote: lote.id });
     }
 
     return { nome, papel, entrou, estado, eventos, eventosVisiveis, contadores, avisos, ocultarProducao,

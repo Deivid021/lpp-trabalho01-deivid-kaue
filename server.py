@@ -26,16 +26,29 @@ INTERVALO = 5            # segundos entre uma colheita automática e outra
 PRODUCAO_INICIAL = 10    # café colhido a cada INTERVALO
 GANHO_PLANTACAO = 5      # cada plantação concluída aumenta a colheita em 5
 LIMITE_COLHEDORES = 3    # máximo de colhedores trabalhando ao mesmo tempo
+INTERVALO_LOTE = 15      # a cada 15 s um lote de grãos fica pronto no pé
+TAMANHO_LOTE = 30        # grãos por lote
+PRAZO_LOTE = 12          # segundos para levar o lote ao terreiro antes de mofar
+TEMPO_SECAGEM = 6        # segundos que o lote passa secando no terreiro
+TORRA_POR_TORREFACAO = 10  # café seco torrado por torrefação a cada INTERVALO
 
 # Catálogo de construções: custo em café, tempo de obra e efeito.
 CONSTRUCOES = {
     "plantacao": {"nome": "Plantação", "emoji": "🌿", "custo": 40, "tempo": 6,
                   "efeito": "+5 café por colheita"},
+    "terreiro": {"nome": "Terreiro", "emoji": "🟫", "custo": 60, "tempo": 8,
+                 "efeito": "+1 vaga de secagem"},
+    "torrefacao": {"nome": "Torrefação", "emoji": "🏭", "custo": 80, "tempo": 10,
+                   "efeito": "torra 10 café seco por colheita"},
 }
 
 estado = {
     "fase": "aguardando",      # aguardando -> aberta -> encerrada
     "cafe": 150,               # café colhido (recurso primário)
+    "cafe_seco": 0,            # café que já passou pelo terreiro
+    "cafe_torrado": 0,         # recurso refinado
+    "lotes": [],               # lotes no pé ou secando no terreiro
+    "mofados": 0,              # lotes perdidos por não secarem a tempo
     "colhedores": 0,           # colhedores ocupados agora
     "limite": LIMITE_COLHEDORES,
     "producao": PRODUCAO_INICIAL,
@@ -43,6 +56,8 @@ estado = {
     "em_obra": 0,
     "concluidas": {            # construções prontas, por tipo
         "plantacao": 1,
+        "terreiro": 1,
+        "torrefacao": 0,
     },
     "obras": [],               # tudo o que está desenhado no mapa
     "tipos": CONSTRUCOES,
@@ -112,6 +127,7 @@ async def abrir_safra(sid, dados=None):
     estado["fase"] = "aberta"
     # Os temporizadores passam a ser fontes de eventos a partir daqui.
     sio.start_background_task(colheita)
+    sio.start_background_task(ciclo_de_lotes)
     # EMIT servidor -> TODOS: a mudança de fase vale para o cafezal inteiro.
     await sio.emit("safra.iniciada", fato(pedido, por=jogadores[sid]["nome"]))
 
@@ -162,6 +178,12 @@ async def colheita():
         colhido = estado["producao"]
         estado["cafe"] += colhido
         extras = {"colhido": colhido}
+        # Recurso refinado: cada torrefação transforma café seco em torrado.
+        capacidade = estado["concluidas"]["torrefacao"] * TORRA_POR_TORREFACAO
+        torrado = min(estado["cafe_seco"], capacidade)
+        estado["cafe_seco"] -= torrado
+        estado["cafe_torrado"] += torrado
+        extras["torrado"] = torrado
         # EMIT servidor -> TODOS, sem ninguém pedir: a causa é o temporizador.
         await sio.emit("recurso.produzido", fato("temporizador", **extras))
 
@@ -198,3 +220,78 @@ async def encerrar_safra(sid, dados=None):
     await sio.emit("safra.encerrada", fato(pedido, por=jogadores[sid]["nome"]))
 
 
+# ---------------------------------------------------------------------------
+# Evento próprio do cafezal: o grão MOFA se não for levado ao terreiro a tempo
+# ---------------------------------------------------------------------------
+async def ciclo_de_lotes():
+    """Temporizador: de tempos em tempos um lote de grãos fica pronto no pé."""
+    while estado["fase"] == "aberta":
+        await sio.sleep(INTERVALO_LOTE)
+        if estado["fase"] != "aberta":
+            break
+        lote = {"id": novo_id(), "qtd": TAMANHO_LOTE, "status": "aguardando",
+                "inicio": agora_ms(), "prazo": PRAZO_LOTE}
+        estado["lotes"].append(lote)
+        # EMIT servidor -> TODOS: qualquer jogador pode levar o lote ao terreiro.
+        await sio.emit("lote.colhido", fato("temporizador", lote=lote))
+        # Cada lote tem o seu próprio temporizador de prazo.
+        sio.start_background_task(vigiar_lote, lote)
+
+
+async def vigiar_lote(lote):
+    """Temporizador do prazo: se ninguém levou o lote ao terreiro, ele mofa."""
+    await sio.sleep(lote["prazo"])
+    if estado["fase"] != "aberta" or lote["status"] != "aguardando":
+        return
+    estado["lotes"].remove(lote)
+    estado["mofados"] += 1
+    # EMIT servidor -> TODOS: o lote se perdeu para o cafezal inteiro.
+    await sio.emit("lote.mofado", fato("lote.colhido (temporizador)", lote=lote))
+
+
+def terreiros_ocupados():
+    return sum(1 for l in estado["lotes"] if l["status"] == "secando")
+
+
+# ON pedido do Jogador: levar um lote ao terreiro para secar.
+@sio.on("secagem.solicitada")
+async def secar(sid, dados=None):
+    pedido = "secagem.solicitada"
+    lote_id = (dados or {}).get("lote")
+    lote = next((l for l in estado["lotes"] if l["id"] == lote_id), None)
+    # Mesma regra da construção: validar e alterar sem await no meio, então
+    # se dois jogadores pedirem o mesmo lote, só o primeiro consegue.
+    if jogadores[sid]["papel"] == "mestre":
+        motivo = "O Mestre não leva lotes ao terreiro"
+    elif estado["fase"] != "aberta":
+        motivo = "A safra não está aberta"
+    elif lote is None:
+        motivo = "Esse lote não existe mais (secou ou mofou)"
+    elif lote["status"] != "aguardando":
+        motivo = "Esse lote já está no terreiro"
+    elif terreiros_ocupados() >= estado["concluidas"]["terreiro"]:
+        motivo = "Todos os terreiros estão ocupados"
+    else:
+        motivo = None
+    if motivo:
+        await recusar(sid, motivo, pedido, lote=lote_id)
+        return
+    lote["status"] = "secando"
+    lote["inicio"] = agora_ms()
+    lote["duracao"] = TEMPO_SECAGEM
+    nome = jogadores[sid]["nome"]
+    # EMIT servidor -> TODOS: o lote saiu do pé e ocupa um terreiro.
+    await sio.emit("secagem.iniciada", fato(pedido, por=nome, lote=lote))
+    sio.start_background_task(concluir_secagem, lote, nome)
+
+
+async def concluir_secagem(lote, nome):
+    """Temporizador da secagem: o lote vira café seco."""
+    await sio.sleep(TEMPO_SECAGEM)
+    if estado["fase"] != "aberta":
+        return
+    estado["lotes"].remove(lote)
+    estado["cafe_seco"] += lote["qtd"]
+    # EMIT servidor -> TODOS: o terreiro ficou livre e o estoque mudou.
+    await sio.emit("secagem.concluida",
+                   fato("secagem.iniciada (temporizador)", por=nome, lote=lote))
