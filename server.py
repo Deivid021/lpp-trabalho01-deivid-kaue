@@ -110,6 +110,8 @@ async def abrir_safra(sid, dados=None):
         await recusar(sid, "A safra já foi aberta", pedido)
         return
     estado["fase"] = "aberta"
+    # Os temporizadores passam a ser fontes de eventos a partir daqui.
+    sio.start_background_task(colheita)
     # EMIT servidor -> TODOS: a mudança de fase vale para o cafezal inteiro.
     await sio.emit("safra.iniciada", fato(pedido, por=jogadores[sid]["nome"]))
 
@@ -147,8 +149,37 @@ async def construir(sid, dados=None):
     nome = jogadores[sid]["nome"]
     # EMIT servidor -> TODOS: o pedido foi aceito e o estoque mudou para todos.
     await sio.emit("construcao.iniciada", fato(pedido, por=nome, obra=obra))
+    # A obra termina sozinha: um temporizador vai gerar construcao.concluida.
+    sio.start_background_task(concluir_obra, obra, nome)
 
 
+async def colheita():
+    """Temporizador: a cada INTERVALO o cafezal produz café sozinho."""
+    while estado["fase"] == "aberta":
+        await sio.sleep(INTERVALO)  # sio.sleep não trava o servidor
+        if estado["fase"] != "aberta":
+            break
+        colhido = estado["producao"]
+        estado["cafe"] += colhido
+        extras = {"colhido": colhido}
+        # EMIT servidor -> TODOS, sem ninguém pedir: a causa é o temporizador.
+        await sio.emit("recurso.produzido", fato("temporizador", **extras))
+
+
+async def concluir_obra(obra, nome):
+    """Temporizador da obra: depois de alguns segundos ela fica pronta."""
+    await sio.sleep(obra["duracao"])
+    if estado["fase"] != "aberta":
+        return
+    estado["colhedores"] -= 1
+    estado["em_obra"] -= 1
+    estado["concluidas"][obra["tipo"]] += 1
+    obra["status"] = "pronta"
+    if obra["tipo"] == "plantacao":
+        estado["producao"] += GANHO_PLANTACAO
+    # EMIT servidor -> TODOS: o colhedor ficou livre e a construção apareceu.
+    await sio.emit("construcao.concluida",
+                   fato("construcao.iniciada (temporizador)", por=nome, obra=obra))
 
 
 

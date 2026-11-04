@@ -448,6 +448,18 @@ createApp({
         avisar(d.motivo, "erro");
         jogo.recusado(d.motivo);
       });
+      // ON recurso.produzido: vem do temporizador do servidor, sem clique;
+      // o cliente nunca pergunta "já produziu?", só escuta.
+      ouvir("recurso.produzido", "atualiza o estoque e mostra o +N", (d) => {
+        atualizar(d);
+        jogo.recursoProduzido(d.estado, d.colhido, d.torrado);
+      });
+      // ON construcao.concluida: o temporizador da obra terminou.
+      ouvir("construcao.concluida", "transforma o canteiro na construção pronta", (d) => {
+        atualizar(d);
+        avisar(estado.tipos[d.obra.tipo].nome + " de " + d.por + " concluída! (" + estado.tipos[d.obra.tipo].efeito + ")", "ok");
+        jogo.obraConcluida(d.estado, d.obra);
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
