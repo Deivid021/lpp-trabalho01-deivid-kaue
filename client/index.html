@@ -460,6 +460,12 @@ createApp({
         avisar(estado.tipos[d.obra.tipo].nome + " de " + d.por + " concluída! (" + estado.tipos[d.obra.tipo].efeito + ")", "ok");
         jogo.obraConcluida(d.estado, d.obra);
       });
+      // ON safra.encerrada: novos pedidos passam a ser recusados pelo servidor.
+      ouvir("safra.encerrada", "escurece o cafezal e mostra o fim da safra", (d) => {
+        atualizar(d);
+        avisar("Safra encerrada.");
+        jogo.safraEncerrada();
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
@@ -472,6 +478,7 @@ createApp({
       pedir("construcao.solicitada", { tipo });
     }
     function encerrarSafra() {
+      pedir("safra.encerramento_solicitado");
     }
     function secar(lote) {
     }

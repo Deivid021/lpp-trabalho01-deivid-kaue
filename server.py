@@ -182,5 +182,19 @@ async def concluir_obra(obra, nome):
                    fato("construcao.iniciada (temporizador)", por=nome, obra=obra))
 
 
+# ON pedido do Mestre: encerrar a safra.
+@sio.on("safra.encerramento_solicitado")
+async def encerrar_safra(sid, dados=None):
+    pedido = "safra.encerramento_solicitado"
+    if jogadores[sid]["papel"] != "mestre":
+        await recusar(sid, "Só o Mestre pode encerrar a safra", pedido)
+        return
+    if estado["fase"] != "aberta":
+        await recusar(sid, "A safra não está aberta", pedido)
+        return
+    estado["fase"] = "encerrada"
+    # EMIT servidor -> TODOS: a partir daqui novos pedidos serão recusados
+    # e os temporizadores param no próximo ciclo.
+    await sio.emit("safra.encerrada", fato(pedido, por=jogadores[sid]["nome"]))
 
 
