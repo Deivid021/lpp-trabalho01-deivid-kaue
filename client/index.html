@@ -151,6 +151,10 @@
           <h2 style="margin:0">Painel de eventos</h2>
           <label><input type="checkbox" v-model="ocultarProducao"> ocultar recurso.produzido</label>
         </div>
+        <!-- Contadores por evento (dupla): quantas vezes cada evento já ocorreu -->
+        <div class="contadores">
+          <span v-for="(n, nomeEvento) in contadores" :key="nomeEvento" class="chip">{{ nomeEvento }} ×{{ n }}</span>
+        </div>
         <div class="lista">
           <div v-if="eventosVisiveis.length === 0" class="vazio">Nenhum evento ainda</div>
           <div v-for="e in eventosVisiveis" :key="e.id" class="evento" :class="[e.direcao, { recusa: e.nome === 'operacao.recusada' }]">
