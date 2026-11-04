@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cafezal em Tempo Real</title>
+<style>
+  :root {
+    --fundo: #f6efe6; --cartao: #fffaf3; --borda: #e2d3bf; --texto: #3b2a1e;
+    --suave: #8a7462; --cafe: #6f3d1f; --verde: #2f7d4a; --azul: #2563c9;
+    --vermelho: #c0392b; --amarelo: #d99a1e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+         background: var(--fundo); color: var(--texto); }
+  [v-cloak] { display: none; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--borda);
+           background: #fff; color: var(--texto); border-radius: 8px; padding: 8px 12px; }
+  button:hover { border-color: var(--cafe); }
+  button.principal { background: var(--cafe); color: #fff; border-color: var(--cafe); }
+  button.perigo { background: #fff; color: var(--vermelho); border-color: var(--vermelho); }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--suave); margin: 0 0 10px; }
+
+  .login { max-width: 380px; margin: 80px auto; background: var(--cartao);
+           border: 1px solid var(--borda); border-radius: 14px; padding: 24px; }
+  .login label { display: block; margin: 14px 0 6px; font-size: 14px; }
+  .login input[type=text] { width: 100%; padding: 10px; border: 1px solid var(--borda);
+                            border-radius: 8px; font: inherit; }
+  .papeis { display: flex; gap: 16px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+           justify-content: space-between; padding: 12px 20px;
+           background: var(--cafe); color: #fff; }
+  .fase { padding: 3px 10px; border-radius: 99px; background: rgba(255,255,255,.18); font-size: 14px; }
+
+  .grade { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px;
+           padding: 16px 20px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 980px) { .grade { grid-template-columns: 1fr; } }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 14px; }
+  .coluna { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  #jogo { width: 100%; aspect-ratio: 760 / 320; border-radius: 10px; overflow: hidden; background: #6aa84f; }
+  #jogo canvas { width: 100% !important; height: auto !important; image-rendering: auto; }
+
+  .avisos { min-height: 34px; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .aviso { padding: 7px 12px; border-radius: 8px; font-size: 14px; background: #efe6da; }
+  .aviso.ok { background: #dcf1e2; color: #1d5b33; }
+  .aviso.erro { background: #fadbd7; color: #8d2318; }
+
+  .estoque { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+  .numero { background: #fff; border: 1px solid var(--borda); border-radius: 10px; padding: 8px 10px; }
+  .numero small { display: block; color: var(--suave); font-size: 12px; }
+  .numero strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .acoes button small { display: block; font-size: 11px; color: inherit; opacity: .75; }
+
+  .lote { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+          padding: 6px 0; border-bottom: 1px dashed var(--borda); font-size: 14px; }
+  .lote:last-child { border-bottom: 0; }
+  .vazio { color: var(--suave); font-size: 14px; }
+
+  .eventos { display: flex; flex-direction: column; max-height: 720px; }
+  .eventos .topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+  .contadores { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #efe6da;
+          font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .lista { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .evento { border-left: 4px solid var(--verde); background: #fff; border-radius: 6px;
+            padding: 6px 8px; font-size: 12px; }
+  .evento.emit { border-color: var(--azul); }
+  .evento.recusa { border-color: var(--vermelho); }
+  .evento .linha1 { display: flex; justify-content: space-between; gap: 6px;
+                    font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .evento .dir { font-weight: 700; }
+  .evento.emit .dir { color: var(--azul); }
+  .evento.on .dir { color: var(--verde); }
+  .evento.recusa .dir { color: var(--vermelho); }
+  .evento .meta { color: var(--suave); margin-top: 2px; word-break: break-word; }
+
+  footer { text-align: center; padding: 18px; color: var(--suave); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <!-- Tela de entrada: nome e papel -->
+  <section v-if="!entrou" class="login">
+    <h1>☕ Cafezal em Tempo Real</h1>
+    <label for="nome">Seu nome</label>
+    <input id="nome" type="text" v-model="nome" maxlength="20" @keyup.enter="entrar" placeholder="Ex.: Ana">
+    <label>Papel</label>
+    <div class="papeis">
+      <label><input type="radio" value="jogador" v-model="papel"> Jogador (constrói)</label>
+      <label><input type="radio" value="mestre" v-model="papel"> Mestre (abre/encerra)</label>
+    </div>
+    <div class="acoes"><button class="principal" @click="entrar">Entrar no cafezal</button></div>
+  </section>
+
+  <template v-else>
+    <header>
+      <h1>☕ Cafezal em Tempo Real</h1>
+      <span>{{ nome }} · {{ papel === 'mestre' ? 'Mestre' : 'Jogador' }}</span>
+      <span class="fase">Safra: {{ estado.fase }}</span>
+    </header>
+
+    <main class="grade">
+      <div class="coluna">
+        <!-- Cafezal desenhado (Phaser) e avisos -->
+        <section class="cartao">
+          <div id="jogo"></div>
+          <div class="avisos">
+            <div v-for="a in avisos" :key="a.id" class="aviso" :class="a.tipo">{{ a.texto }}</div>
+          </div>
+        </section>
+
+        <!-- Estoque, colhedores e ações -->
+        <section class="cartao">
+          <h2>Estoque do cafezal</h2>
+          <div class="estoque">
+            <div class="numero"><small>🍒 Café colhido</small><strong>{{ estado.cafe }}</strong></div>
+            <div class="numero"><small>👩‍🌾 Colhedores</small><strong>{{ estado.colhedores }}/{{ estado.limite }}</strong></div>
+            <div class="numero"><small>⏱ Colheita</small><strong>+{{ porMinuto }}/min</strong></div>
+            <div class="numero"><small>🚧 Em obra</small><strong>{{ estado.em_obra }}</strong></div>
+          </div>
+          <p class="vazio" style="margin:10px 0 0">
+            Concluídas:
+            <span v-for="(qtd, tipo) in estado.concluidas" :key="tipo">
+              {{ estado.tipos[tipo] ? estado.tipos[tipo].emoji + ' ' + estado.tipos[tipo].nome : tipo }}: {{ qtd }} &nbsp;
+            </span>
+          </p>
+
+          <div class="acoes" v-if="papel === 'mestre'">
+            <button class="principal" @click="abrirSafra">☀️ Abrir safra</button>
+            <button class="perigo" @click="encerrarSafra">🌙 Encerrar safra</button>
+          </div>
+          <div class="acoes" v-else>
+            <button v-for="(info, tipo) in estado.tipos" :key="tipo" @click="construir(tipo)">
+              {{ info.emoji }} Construir {{ info.nome }}
+              <small>{{ info.custo }} 🍒 · {{ info.tempo }}s · {{ info.efeito }}</small>
+            </button>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Painel de eventos: mostra o paradigma funcionando -->
+      <section class="cartao eventos">
+        <div class="topo">
+          <h2 style="margin:0">Painel de eventos</h2>
+          <label><input type="checkbox" v-model="ocultarProducao"> ocultar recurso.produzido</label>
+        </div>
+        <div class="lista">
+          <div v-if="eventosVisiveis.length === 0" class="vazio">Nenhum evento ainda</div>
+          <div v-for="e in eventosVisiveis" :key="e.id" class="evento" :class="[e.direcao, { recusa: e.nome === 'operacao.recusada' }]">
+            <div class="linha1">
+              <span><span class="dir">{{ e.direcao === 'emit' ? '⬆ emit' : '⬇ on' }}</span> {{ e.nome }}</span>
+              <span>{{ e.hora }}</span>
+            </div>
+            <div class="meta" v-if="e.causa">causa: {{ e.causa }}</div>
+            <div class="meta" v-if="e.dados">dados: {{ e.dados }}</div>
+            <div class="meta" v-if="e.reacao">reação: {{ e.reacao }}</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </template>
+
+  <footer>Desenvolvido por <b>Deivid Sestren</b> e <b>Kaue Gorges</b> · Linguagem de Programação e Paradigmas · 2026/2</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script src="https://unpkg.com/vue@3.4.38/dist/vue.global.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+<!-- =====================================================================
+     BLOCO 1 - Cafezal desenhado (Phaser). Só desenha o que recebe;
+     não decide nada. Cada método corresponde a um evento do servidor.
+     ===================================================================== -->
+<script>
+const EMOJI = 'system-ui,"Segoe UI",Roboto,sans-serif,"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji"';
+const LARG = 760, ALT = 320;
+// Pontos do mapa onde aparecem as construções (lotes de terra).
+const PONTOS = [];
+for (let lin = 0; lin < 2; lin++)
+  for (let col = 0; col < 6; col++) PONTOS.push({ x: 60 + col * 78, y: 170 + lin * 82 });
+const TULHA = { x: 470, y: 120 };        // de onde sobem os "+N"
+const PE = { x: 545, y: 62 };            // lotes esperando no pé
+const TERREIRO = { x: 520, y: 150, w: 220, h: 150 };
+
+class CenaCafezal extends Phaser.Scene {
+  constructor() { super("cafezal"); this.estado = null; this.relogio = 0; }
+
+  create() {
+    const g = this.add.graphics();
+    g.fillStyle(0x7cb342).fillRect(0, 0, LARG, ALT);                 // grama
+    g.fillStyle(0x8d6e4a).fillRect(0, 126, 500, 16);                 // estrada
+    g.fillStyle(0x8d6e4a).fillRect(484, 40, 16, 280);
+    for (let i = 0; i < 14; i++) {                                    // fileiras de café
+      for (let j = 0; j < 2; j++) {
+        const x = 24 + i * 32, y = 64 + j * 30;
+        g.fillStyle(0x2e5e2a).fillCircle(x, y, 11);
+        g.fillStyle(0xc62828).fillCircle(x - 4, y - 2, 2).fillCircle(x + 3, y + 3, 2);
+      }
+    }
+    g.fillStyle(0xd7b98e).fillRoundedRect(TERREIRO.x, TERREIRO.y, TERREIRO.w, TERREIRO.h, 10);
+    g.lineStyle(2, 0xa98457).strokeRoundedRect(TERREIRO.x, TERREIRO.y, TERREIRO.w, TERREIRO.h, 10);
+    for (const p of PONTOS) { g.fillStyle(0x9ccc65).fillRoundedRect(p.x - 32, p.y - 32, 64, 64, 8); }
+    this.add.text(TERREIRO.x + 10, TERREIRO.y + 6, "Terreiro de secagem", { fontSize: "13px", fontFamily: EMOJI, color: "#5d4037" });
+    this.add.text(PE.x - 25, 40, "Colheita no pé", { fontSize: "13px", fontFamily: EMOJI, color: "#1b3d12" });
+    this.add.text(TULHA.x - 14, TULHA.y - 16, "🧺", { fontSize: "26px", fontFamily: EMOJI });
+
+    this.escuro = this.add.rectangle(0, 0, LARG, ALT, 0x0b1026, 0).setOrigin(0).setDepth(50);
+    this.faixa = this.add.text(LARG / 2, 16, "⏳ Aguardando o Mestre", {
+      fontSize: "16px", fontFamily: EMOJI, color: "#fff", backgroundColor: "#3b2a1eaa", padding: { x: 10, y: 4 },
+    }).setOrigin(0.5, 0).setDepth(60);
+    this.camada = this.add.container(0, 0);
+    this.barras = [];
+    if (this.estado) this.desenhar();
+    if (this.aoFicarPronta) this.aoFicarPronta();
+  }
+
+  // ---- utilidades de desenho -------------------------------------------
+  agora() { return Date.now() + this.relogio; }
+  flutuar(x, y, texto, cor = "#fff") {
+    const t = this.add.text(x, y, texto, { fontSize: "18px", fontFamily: EMOJI, color: cor,
+      stroke: "#000", strokeThickness: 3 }).setOrigin(0.5).setDepth(70);
+    this.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 1400, onComplete: () => t.destroy() });
+  }
+  pontoDaObra(id) {
+    const i = (this.estado?.obras || []).findIndex(o => o.id === id);
+    return PONTOS[Math.max(0, i) % PONTOS.length];
+  }
+  barra(x, y, inicio, duracao, cor) {
+    const fundo = this.add.rectangle(x - 26, y, 52, 6, 0x000000, 0.35).setOrigin(0, 0.5);
+    const frente = this.add.rectangle(x - 26, y, 1, 6, cor).setOrigin(0, 0.5);
+    this.camada.add([fundo, frente]);
+    this.barras.push({ frente, inicio, duracao });
+  }
+
+  // Redesenha tudo a partir do estado enviado pelo servidor.
+  desenhar() {
+    if (!this.camada) return;
+    this.camada.removeAll(true);
+    this.barras = [];
+    const e = this.estado;
+    (e.obras || []).slice(0, PONTOS.length).forEach((o, i) => {
+      const p = PONTOS[i];
+      const tipo = e.tipos?.[o.tipo];
+      const emoji = o.status === "obra" ? "🚧" : (tipo?.emoji || "🏠");
+      this.camada.add(this.add.text(p.x, p.y - 4, emoji, { fontSize: "34px", fontFamily: EMOJI }).setOrigin(0.5));
+      this.camada.add(this.add.text(p.x, p.y + 22, tipo?.nome || o.tipo, { fontSize: "10px", fontFamily: EMOJI, color: "#1b3d12" }).setOrigin(0.5));
+      if (o.status === "obra") this.barra(p.x, p.y - 30, o.inicio, o.duracao, 0xffc107);
+    });
+    let noPe = 0, secando = 0;
+    for (const l of e.lotes || []) {
+      if (l.status === "aguardando") {
+        const x = PE.x + (noPe++ % 4) * 48, y = PE.y + 20;
+        this.camada.add(this.add.text(x, y, "🍒", { fontSize: "26px", fontFamily: EMOJI }).setOrigin(0.5));
+        this.barra(x, y + 20, l.inicio, l.prazo, 0xe53935);
+      } else {
+        const x = TERREIRO.x + 40 + (secando % 4) * 48, y = TERREIRO.y + 50 + Math.floor(secando / 4) * 50;
+        secando++;
+        this.camada.add(this.add.text(x, y, "🫘", { fontSize: "26px", fontFamily: EMOJI }).setOrigin(0.5));
+        this.barra(x, y + 22, l.inicio, l.duracao, 0x43a047);
+      }
+    }
+    const torref = e.concluidas?.torrefacao;
+    if (torref !== undefined) {
+      this.camada.add(this.add.text(TERREIRO.x + 10, TERREIRO.y + TERREIRO.h - 22,
+        `🫘 ${e.cafe_seco} seco · ☕ ${e.cafe_torrado} torrado`, { fontSize: "12px", fontFamily: EMOJI, color: "#3e2723" }));
+    }
+  }
+
+  update() {
+    const t = this.agora();
+    for (const b of this.barras) {
+      const frac = Phaser.Math.Clamp((t - b.inicio) / (b.duracao * 1000), 0, 1);
+      b.frente.width = Math.max(1, 52 * frac);
+    }
+  }
+
+  // ---- um método para cada evento do servidor --------------------------
+  mostrarEstado(estado) {
+    this.estado = estado;
+    if (estado.fase === "aberta") this.safraIniciada(true);
+    if (estado.fase === "encerrada") this.safraEncerrada(true);
+    this.desenhar();
+  }
+  safraIniciada(silencioso) {
+    this.faixa?.setText("☀️ Safra aberta");
+    if (this.escuro) this.escuro.fillAlpha = 0;
+    if (!silencioso) this.cameras.main.flash(300, 255, 240, 200);
+  }
+  obraIniciada(estado, obra) {
+    this.mostrarEstado(estado);
+    const custo = estado.tipos?.[obra?.tipo]?.custo;
+    this.flutuar(TULHA.x, TULHA.y - 20, `-${custo} 🍒`, "#ffcdd2");
+  }
+  recusado(motivo) {
+    this.cameras.main.shake(250, 0.01);
+    const t = this.add.text(LARG / 2, ALT / 2, `✋ ${motivo}`, { fontSize: "18px", fontFamily: EMOJI,
+      color: "#fff", backgroundColor: "#c0392bdd", padding: { x: 12, y: 6 } }).setOrigin(0.5).setDepth(80);
+    this.tweens.add({ targets: t, alpha: 0, delay: 1300, duration: 500, onComplete: () => t.destroy() });
+  }
+  recursoProduzido(estado, colhido, torrado) {
+    this.mostrarEstado(estado);
+    this.flutuar(TULHA.x, TULHA.y - 20, `+${colhido} 🍒`);
+    if (torrado) this.flutuar(TERREIRO.x + 170, TERREIRO.y + TERREIRO.h - 30, `+${torrado} ☕`);
+  }
+  obraConcluida(estado, obra) {
+    this.mostrarEstado(estado);
+    const p = this.pontoDaObra(obra?.id);
+    this.flutuar(p.x, p.y - 30, "✨ pronta!");
+  }
+  safraEncerrada(silencioso) {
+    this.faixa?.setText("🌙 Safra encerrada");
+    if (this.escuro) {
+      if (silencioso) this.escuro.fillAlpha = 0.45;
+      else this.tweens.add({ targets: this.escuro, fillAlpha: 0.45, duration: 800 });
+    }
+  }
+  loteColhido(estado) { this.mostrarEstado(estado); this.flutuar(PE.x + 60, PE.y, "🍒 lote pronto!"); }
+  secagemIniciada(estado) { this.mostrarEstado(estado); this.flutuar(TERREIRO.x + 110, TERREIRO.y + 40, "☀️ secando"); }
+  secagemConcluida(estado, lote) { this.mostrarEstado(estado); this.flutuar(TERREIRO.x + 110, TERREIRO.y + 60, `+${lote?.qtd} 🫘 seco`); }
+  loteMofado(estado) { this.mostrarEstado(estado); this.cameras.main.shake(150, 0.004); this.flutuar(PE.x + 60, PE.y + 10, "🦠 lote mofou!", "#e1bee7"); }
+}
+
+// Fachada usada pela aplicação: guarda as chamadas até a cena estar pronta.
+const jogo = (() => {
+  let cena = null, pendentes = [], relogio = 0;
+  const fachada = {
+    iniciar(idDiv) {
+      const c = new CenaCafezal();
+      // quando a cena termina o create(), executa as chamadas que chegaram antes
+      c.aoFicarPronta = () => { cena = c; c.relogio = relogio;
+        pendentes.forEach(([m, a]) => c[m](...a)); pendentes = []; };
+      new Phaser.Game({ type: Phaser.AUTO, parent: idDiv, width: LARG, height: ALT,
+        backgroundColor: "#7cb342", scene: c });
+    },
+    ajustarRelogio(agoraServidor) { relogio = agoraServidor - Date.now(); if (cena) cena.relogio = relogio; },
+  };
+  for (const m of ["mostrarEstado", "safraIniciada", "obraIniciada", "recusado", "recursoProduzido",
+                   "obraConcluida", "safraEncerrada", "loteColhido", "secagemIniciada",
+                   "secagemConcluida", "loteMofado"]) {
+    fachada[m] = (...a) => (cena ? cena[m](...a) : pendentes.push([m, a]));
+  }
+  return fachada;
+})();
+</script>
+
+<!-- =====================================================================
+     BLOCO 2 - Aplicação (Vue + Socket.IO). Aqui ficam as ESCUTAS (on)
+     e os PEDIDOS (emit). Regra de ouro: o cliente nunca altera o estado
+     por conta própria; ele só muda quando chega um evento do servidor.
+     ===================================================================== -->
+<script>
+const { createApp, ref, reactive, computed, nextTick } = Vue;
+
+createApp({
+  setup() {
+    const nome = ref("");
+    const papel = ref("jogador");
+    const entrou = ref(false);
+    const estado = reactive({ fase: "aguardando", cafe: 0, colhedores: 0, limite: 0, producao: 0,
+                              intervalo: 5, em_obra: 0, concluidas: {}, obras: [], tipos: {} });
+    const eventos = ref([]);
+    const contadores = reactive({});
+    const avisos = ref([]);
+    const ocultarProducao = ref(false);
+    const relogio = ref(0);            // diferença entre o relógio do servidor e o local
+    const agora = ref(Date.now());
+    setInterval(() => (agora.value = Date.now()), 250);
+    let socket = null, seq = 0;
+
+    // ---- infraestrutura do painel ----------------------------------------
+    function resumir(d) {
+      if (!d || typeof d !== "object") return d === undefined ? "" : String(d);
+      const { estado: _e, causa: _c, agora: _a, ...resto } = d;
+      const texto = Object.keys(resto).length ? JSON.stringify(resto) : "";
+      return texto.length > 160 ? texto.slice(0, 160) + "…" : texto;
+    }
+    function registrar(direcao, evento, dados, reacao) {
+      contadores[evento] = (contadores[evento] || 0) + 1;
+      eventos.value.unshift({ id: ++seq, direcao, nome: evento, hora: new Date().toLocaleTimeString("pt-BR"),
+        causa: dados?.causa || "", dados: resumir(dados), reacao });
+      if (eventos.value.length > 200) eventos.value.pop();
+    }
+    // ouvir(...) = socket.on(...) + registro no painel (⬇ on)
+    function ouvir(evento, reacao, fn) {
+      socket.on(evento, (d) => { registrar("on", evento, d, reacao); fn(d); });
+    }
+    // pedir(...) = socket.emit(...) + registro no painel (⬆ emit)
+    function pedir(evento, dados = {}) {
+      registrar("emit", evento, dados, null);
+      socket.emit(evento, dados);
+    }
+    function atualizar(d) {
+      if (d?.estado) Object.assign(estado, d.estado);
+      if (d?.agora) { relogio.value = d.agora - Date.now(); jogo.ajustarRelogio(d.agora); }
+    }
+    function avisar(texto, tipo = "info") {
+      const id = ++seq;
+      avisos.value.unshift({ id, texto, tipo });
+      avisos.value = avisos.value.slice(0, 3);
+      setTimeout(() => (avisos.value = avisos.value.filter((a) => a.id !== id)), 4000);
+    }
+
+    const porMinuto = computed(() => Math.round((estado.producao * 60) / (estado.intervalo || 5)));
+    const eventosVisiveis = computed(() =>
+      eventos.value.filter((e) => !(ocultarProducao.value && e.nome === "recurso.produzido")));
+    function restante(item, segundos) {
+      const s = Math.ceil(segundos - (agora.value + relogio.value - item.inicio) / 1000);
+      return Math.max(0, s);
+    }
+
+    async function entrar() {
+      if (!nome.value.trim()) { alert("Digite um nome"); return; }
+      entrou.value = true;
+      await nextTick();
+      jogo.iniciar("jogo");
+      socket = io({ auth: { nome: nome.value.trim(), papel: papel.value } });
+
+      // ================= ESCUTAS (fatos do servidor) =====================
+    }
+
+    // ================= PEDIDOS (cliente -> servidor) =====================
+    // O cliente só PEDE; quem decide é o servidor, que responde com um fato
+    // (para todos) ou com operacao.recusada (só para quem pediu).
+    function abrirSafra() {
+    }
+    function construir(tipo) {
+    }
+    function encerrarSafra() {
+    }
+    function secar(lote) {
+    }
+
+    return { nome, papel, entrou, estado, eventos, eventosVisiveis, contadores, avisos, ocultarProducao,
+             porMinuto, restante, entrar, abrirSafra, construir, encerrarSafra, secar };
+  },
+}).mount("#app");
+</script>
+</body>
+</html>
