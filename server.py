@@ -120,6 +120,24 @@ async def construir(sid, dados=None):
     pedido = "construcao.solicitada"
     tipo = (dados or {}).get("tipo", "plantacao")
     info = CONSTRUCOES.get(tipo)
+    # Valida TUDO antes de alterar o estado e SEM await no meio: o servidor
+    # trata um evento por vez, então dois pedidos simultâneos são decididos
+    # em sequência (um vence e o outro recebe a recusa).
+    if info is None:
+        motivo = "Tipo de construção desconhecido"
+    elif jogadores[sid]["papel"] == "mestre":
+        motivo = "O Mestre não constrói, só abre e encerra a safra"
+    elif estado["fase"] != "aberta":
+        motivo = "A safra não está aberta"
+    elif estado["cafe"] < info["custo"]:
+        motivo = f"Café insuficiente (precisa de {info['custo']})"
+    elif estado["colhedores"] >= estado["limite"]:
+        motivo = "Nenhum colhedor livre"
+    else:
+        motivo = None
+    if motivo:
+        await recusar(sid, motivo, pedido, tipo=tipo)
+        return
     estado["cafe"] -= info["custo"]
     estado["colhedores"] += 1
     estado["em_obra"] += 1

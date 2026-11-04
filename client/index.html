@@ -442,6 +442,12 @@ createApp({
         avisar(d.por + " começou a construir " + estado.tipos[d.obra.tipo].nome);
         jogo.obraIniciada(d.estado, d.obra);
       });
+      // ON operacao.recusada: só chega para quem fez o pedido recusado;
+      // o estado não mudou, então só avisamos.
+      ouvir("operacao.recusada", "avisa o motivo e a tela treme", (d) => {
+        avisar(d.motivo, "erro");
+        jogo.recusado(d.motivo);
+      });
     }
 
     // ================= PEDIDOS (cliente -> servidor) =====================
